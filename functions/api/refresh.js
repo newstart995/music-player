@@ -58,7 +58,12 @@ export async function onRequestGet(context) {
         artist = nameParts[0].trim();
         title = nameParts.slice(1).join("-").trim();
       }
-
+      // 自动为域名加上 http:// 协议头并去掉末尾斜杠
+      let domain = (env.QINIU_DOMAIN || "").trim();
+      if (!domain.startsWith("http://") && !domain.startsWith("https://")) {
+      domain = `http://${domain}`;
+      }
+      domain = domain.replace(/\/$/, "");
       tracks.push({
         id: key,
         title: title,
