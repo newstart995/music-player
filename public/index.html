@@ -1,0 +1,214 @@
+#public/                 <-- 静态前端页面
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud Music Player</title>
+  <style>
+    :root {
+      --bg-color: #121212;
+      --card-bg: #1e1e1e;
+      --accent-color: #f39c12;
+      --text-color: #e0e0e0;
+      --text-dim: #a0a0a0;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 240px;
+      background-color: #0a0a0a;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #222;
+    }
+    .sidebar h2 { font-size: 1.2rem; margin-bottom: 20px; color: var(--accent-color); }
+    .genre-list { list-style: none; padding: 0; margin: 0; }
+    .genre-item {
+      padding: 10px 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 5px;
+      color: var(--text-dim);
+      transition: all 0.2s;
+    }
+    .genre-item:hover, .genre-item.active {
+      background-color: var(--card-bg);
+      color: #fff;
+    }
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 30px;
+      overflow-y: auto;
+      padding-bottom: 90px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .refresh-btn {
+      background: var(--accent-color);
+      border: none;
+      color: #000;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .track-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    .track-table th { color: var(--text-dim); border-bottom: 1px solid #333; padding: 12px; }
+    .track-table td { padding: 12px; border-bottom: 1px solid #1a1a1a; }
+    .track-row { cursor: pointer; }
+    .track-row:hover { background-color: var(--card-bg); }
+    .track-row.playing { color: var(--accent-color); }
+    .player-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 75px;
+      background-color: #181818;
+      border-top: 1px solid #282828;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 30px;
+      box-sizing: border-box;
+    }
+    .now-playing { display: flex; flex-direction: column; width: 250px; }
+    .now-playing .title { font-weight: bold; font-size: 0.95rem; }
+    .now-playing .artist { font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; }
+    audio { width: 400px; height: 40px; }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h2>🎵 音乐类型</h2>
+    <ul class="genre-list" id="genreList">
+      <li class="genre-item active" onclick="filterGenre('ALL')">全部歌曲</li>
+    </ul>
+  </div>
+
+  <div class="main-content">
+    <div class="header">
+      <h1 id="currentGenreTitle">全部歌曲</h1>
+      <button class="refresh-btn" onclick="refreshCatalog()">同步七牛云目录</button>
+    </div>
+    <table class="track-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>歌名</th>
+          <th>歌手</th>
+          <th>类型</th>
+        </tr>
+      </thead>
+      <tbody id="trackList"></tbody>
+    </table>
+  </div>
+
+  <div class="player-bar">
+    <div class="now-playing">
+      <span class="title" id="playerTitle">未在播放</span>
+      <span class="artist" id="playerArtist">-</span>
+    </div>
+    <audio id="audioPlayer" controls></audio>
+  </div>
+
+  <script>
+    let allTracks = [];
+    let currentGenre = 'ALL';
+    const audioPlayer = document.getElementById('audioPlayer');
+
+    async function loadMusic() {
+      try {
+        const res = await fetch('/api/music');
+        if (!res.ok) throw new Error('暂无菜单目录');
+        allTracks = await res.json();
+        renderGenres();
+        renderTracks();
+      } catch (err) {
+        document.getElementById('trackList').innerHTML = `<tr><td colspan="4" style="text-align:center;color:#666;">${err.message}，请点击右上角【同步七牛云目录】按钮</td></tr>`;
+      }
+    }
+
+    async function refreshCatalog() {
+      const btn = document.querySelector('.refresh-btn');
+      btn.innerText = '同步中...';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/refresh');
+        const data = await res.json();
+        if (data.success) {
+          alert(`同步成功，共发现 ${data.count} 首歌曲`);
+          await loadMusic();
+        } else {
+          alert('同步失败：' + (data.error || '未知错误'));
+        }
+      } catch (e) {
+        alert('同步失败：' + e.message);
+      } finally {
+        btn.innerText = '同步七牛云目录';
+        btn.disabled = false;
+      }
+    }
+
+    function renderGenres() {
+      const genres = ['ALL', ...new Set(allTracks.map(t => t.genre))];
+      const genreList = document.getElementById('genreList');
+      genreList.innerHTML = genres.map(g => `
+        <li class="genre-item ${g === currentGenre ? 'active' : ''}" onclick="filterGenre('${g}')">
+          ${g === 'ALL' ? '全部歌曲' : g}
+        </li>
+      `).join('');
+    }
+
+    function filterGenre(genre) {
+      currentGenre = genre;
+      document.getElementById('currentGenreTitle').innerText = genre === 'ALL' ? '全部歌曲' : genre;
+      renderGenres();
+      renderTracks();
+    }
+
+    function renderTracks() {
+      const filtered = currentGenre === 'ALL' ? allTracks : allTracks.filter(t => t.genre === currentGenre);
+      const trackList = document.getElementById('trackList');
+      trackList.innerHTML = filtered.map((t, index) => `
+        <tr class="track-row" onclick="playTrack('${t.id}')">
+          <td>${index + 1}</td>
+          <td>${t.title}</td>
+          <td>${t.artist}</td>
+          <td>${t.genre}</td>
+        </tr>
+      `).join('');
+    }
+
+    function playTrack(id) {
+      const track = allTracks.find(t => t.id === id);
+      if (!track) return;
+      document.getElementById('playerTitle').innerText = track.title;
+      document.getElementById('playerArtist').innerText = track.artist;
+      audioPlayer.src = track.url;
+      audioPlayer.play();
+    }
+
+    loadMusic();
+  </script>
+</body>
+</html>
